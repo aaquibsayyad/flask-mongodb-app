@@ -339,3 +339,117 @@ Kubernetes provides DNS resolution for services within the cluster. Each service
 ### Note
 
 This README provides the necessary steps and explanations to set up a Flask application with MongoDB locally and in a Kubernetes cluster. Follow these instructions to ensure a successful deployment and test the application thoroughly.
+
+### Design Choices
+
+#### 1. **Dockerfile for Flask Application**
+
+**Chosen Configuration:**
+- **Base Image**: `python:3.8-slim`
+  - **Reason**: This image is lightweight compared to the full Python image, reducing build time and runtime overhead while still providing the necessary Python environment.
+- **Installation of Dependencies**: `pip install -r requirements.txt`
+  - **Reason**: Using a `requirements.txt` file ensures consistent and repeatable installations of dependencies, which aligns with best practices for Python projects.
+- **Environment Variables**: Set `FLASK_APP` and `FLASK_ENV`
+  - **Reason**: These environment variables make it easy to configure and run the Flask application in different environments (development/production).
+
+**Alternatives Considered:**
+- Using a different base image such as `python:3.8` instead of `python:3.8-slim`. The slim version was chosen for its smaller footprint, which is beneficial in a containerized environment.
+
+#### 2. **MongoDB StatefulSet Configuration**
+
+**Chosen Configuration:**
+- **StatefulSet** for MongoDB
+  - **Reason**: A StatefulSet is suitable for applications that require persistent storage and stable network identities. MongoDB benefits from these features to maintain consistency and data integrity.
+- **Authentication**: Enabled with `MONGO_INITDB_ROOT_USERNAME` and `MONGO_INITDB_ROOT_PASSWORD`
+  - **Reason**: Authentication secures access to the MongoDB instance, which is crucial for production environments.
+
+**Alternatives Considered:**
+- **Deployment**: Using a Deployment instead of StatefulSet. StatefulSet was chosen because it is better suited for databases due to its support for persistent storage and stable network identities.
+
+#### 3. **Persistent Storage for MongoDB**
+
+**Chosen Configuration:**
+- **Persistent Volume (PV) and Persistent Volume Claim (PVC)**
+  - **Reason**: Ensures that MongoDB data is retained even if the pod is terminated or restarted, which is critical for data persistence.
+
+**Alternatives Considered:**
+- Using a `hostPath` volume for development purposes. While `hostPath` can be useful for local development, PVC is preferred for its portability and ability to work with various storage backends in production.
+
+#### 4. **Horizontal Pod Autoscaler (HPA)**
+
+**Chosen Configuration:**
+- **Metric**: CPU utilization at 70%
+  - **Reason**: CPU utilization is a common metric for autoscaling web applications. A threshold of 70% is chosen to balance performance and cost by scaling up before reaching high resource usage.
+- **Replicas**: Minimum 2 and maximum 5
+  - **Reason**: Minimum replicas ensure availability, while a maximum of 5 prevents over-provisioning and manages costs.
+
+**Alternatives Considered:**
+- Autoscaling based on memory usage. CPU was chosen due to its direct relation to application load and performance, and it's generally more indicative of application stress.
+
+#### 5. **Kubernetes Services**
+
+**Chosen Configuration:**
+- **Flask Service**: Type `NodePort`
+  - **Reason**: Allows access to the Flask application from outside the cluster for testing and development purposes.
+- **MongoDB Service**: ClusterIP
+  - **Reason**: Ensures MongoDB is only accessible within the cluster, enhancing security.
+
+**Alternatives Considered:**
+- Using `LoadBalancer` service type for Flask in production environments for external access. `NodePort` was used here for simplicity in a local Minikube setup.
+
+### Testing Scenarios
+
+#### 1. **Autoscaling Testing**
+
+**Steps:**
+1. **Simulate Traffic**:
+   - Used `hey` tool to generate HTTP requests to the Flask application:
+     ```bash
+     hey -n 1000 -c 10 http://<Minikube-Node-IP>:<NodePort>
+     ```
+   - This command sends 1000 requests with a concurrency of 10 to simulate high traffic.
+
+2. **Monitor Autoscaling**:
+   - Checked the HPA status:
+     ```bash
+     kubectl get hpa
+     ```
+   - Verified the number of replicas scaled up and down according to CPU utilization.
+
+**Results:**
+- The HPA successfully scaled the Flask deployment from 2 to 5 replicas when CPU utilization exceeded 70%.
+- After traffic subsided, the HPA scaled the replicas back to 2 as expected.
+
+**Issues Encountered:**
+- **Initial Configuration**: There was a delay in scaling due to an initial misconfiguration in the HPA metrics. Correcting the metric configuration resolved this issue.
+
+#### 2. **Database Interactions Testing**
+
+**Steps:**
+1. **Insert Data**:
+   - Used `curl` to perform POST requests to the `/data` endpoint:
+     ```bash
+     curl -X POST -H "Content-Type: application/json" -d '{"key":"value"}' http://<Minikube-Node-IP>:<NodePort>/data
+     ```
+
+2. **Retrieve Data**:
+   - Used `curl` to perform GET requests:
+     ```bash
+     curl http://<Minikube-Node-IP>:<NodePort>/data
+     ```
+
+3. **Verify Data in MongoDB**:
+   - Connected to MongoDB pod and verified data:
+     ```bash
+     kubectl exec -it <mongodb-pod-name> -- mongo -u root -p password --authenticationDatabase admin
+     ```
+   - Used MongoDB shell commands to check the data in the `flask_db` database.
+
+**Results:**
+- Data was successfully inserted and retrieved as expected. The interaction between the Flask application and MongoDB was smooth.
+
+**Issues Encountered:**
+- **Network Latency**: Occasionally faced network latency issues due to the Minikube setup. This was resolved by increasing resource limits for the Minikube VM.
+
+The chosen configurations and setups were selected based on best practices for security, performance, and scalability. Testing confirmed that autoscaling and database interactions worked as intended, with some minor issues resolved during the process. The setup should be robust for both development and initial production use cases.
+
