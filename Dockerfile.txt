@@ -1,0 +1,21 @@
+# Use the official Python image as the base image
+FROM python:3.8-slim
+
+# Set environment variables
+ENV FLASK_APP=app.py
+ENV FLASK_ENV=production
+
+# Set working directory
+WORKDIR /app
+
+# Copy the Flask application and requirements file to the working directory
+COPY app.py requirements.txt /app/
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Expose port 5000 for Flask application
+EXPOSE 5000
+
+# Command to run the Flask application
+CMD ["flask", "run", "--host=0.0.0.0"]
